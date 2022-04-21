@@ -21,29 +21,42 @@ pub fn derive_viewgroup(input: TokenStream) -> TokenStream {
         panic!("derive(ViewGroup) only supports structs with named fields");
     };
 
-    let field_names = fields
+    let view_field_names = fields
         .named
         .iter()
         .map(|f| f.ident.clone().unwrap())
+        .filter(|i| i.to_string().starts_with("view_"))
         .collect::<Vec<_>>();
 
-    let translate = field_names
+    let nonview_field_names = fields
+        .named
         .iter()
-        .map(|f| quote!(#f: self.#f.translate(by),))
+        .map(|f| f.ident.clone().unwrap())
+        .filter(|i| !i.to_string().starts_with("view_"))
         .collect::<Vec<_>>();
 
-    let draw = field_names
+    let translate_views = view_field_names
+        .iter()
+        .map(|f| quote!(#f: self.#f.clone().translate(by),)) // fix me this is shitty
+        .collect::<Vec<_>>();
+
+    let translate_nonviews = nonview_field_names
+        .iter()
+        .map(|f| quote!(#f: self.#f.clone(),))
+        .collect::<Vec<_>>();
+
+    let draw = view_field_names
         .iter()
         .map(|f| quote!(self.#f.draw(display)?;))
         .collect::<Vec<_>>();
 
-    let index = field_names
+    let index = view_field_names
         .iter()
         .enumerate()
         .map(|(i, f)| quote!(#i => &self.#f,))
         .collect::<Vec<_>>();
 
-    let index_mut = field_names
+    let index_mut = view_field_names
         .iter()
         .enumerate()
         .map(|(i, f)| quote!(#i => &mut self.#f,))
@@ -52,7 +65,7 @@ pub fn derive_viewgroup(input: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = ast.generics.split_for_impl();
 
     let name = &ast.ident;
-    let field_count = format!("{}", field_names.len());
+    let field_count = format!("{}", view_field_names.len());
     let field_count = LitInt::new(&field_count, Span::call_site());
 
     let gen_view_group = quote! {
@@ -79,7 +92,8 @@ pub fn derive_viewgroup(input: TokenStream) -> TokenStream {
         impl #impl_generics embedded_graphics::transform::Transform for #name #ty_generics #where_clause {
             fn translate(&self, by: Point) -> Self {
                 Self {
-                    #(#translate)*
+                    #(#translate_views)*
+                    #(#translate_nonviews)*                    
                 }
             }
 
